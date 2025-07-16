@@ -7,7 +7,7 @@
     "start": "node index.js"
   },
   "engines": {
-    "node": "20.x"  // ✅ Forces Node.js 20 on Railway for crypto compatibility
+    "node": "20.x"  
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.18",
