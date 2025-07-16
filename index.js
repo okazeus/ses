@@ -1,4 +1,4 @@
-global.crypto = require('crypto'); // ✅ Fix for Node.js v20+ and Baileys
+global.crypto = require('crypto'); // ✅ Fix for Node.js v20+
 
 const express = require('express');
 const { join } = require('path');
@@ -13,6 +13,7 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
@@ -26,7 +27,6 @@ app.get('/pair', (req, res) => {
 
 app.post('/pair', async (req, res) => {
   const number = req.body.number?.trim();
-
   if (!number || !/^[0-9]{10,15}$/.test(number)) {
     return res.send('❌ Invalid number format. Use without + or spaces.');
   }
@@ -41,7 +41,7 @@ app.post('/pair', async (req, res) => {
 
     const sock = makeWASocket({
       version,
-      logger: pino({ level: 'debug' }), // ✅ Better logging to detect disconnection reason
+      logger: pino({ level: 'debug' }),
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
@@ -68,23 +68,43 @@ app.post('/pair', async (req, res) => {
           });
           console.log('✅ Sent creds.json to WhatsApp user:', number);
         }
+
+        // Exit process after successful link and delivery
+        setTimeout(() => {
+          console.log('✅ Pairing done, exiting process.');
+          process.exit(0);
+        }, 3000);
       }
     });
 
     if (!sock.authState.creds.registered) {
-      // optional delay for stability
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 1000)); // stability delay
       const code = await sock.requestPairingCode(number);
       const displayCode = code?.match(/.{1,4}/g)?.join('-');
 
       if (displayCode) {
-        return res.send(
-          `✅ Pairing code for ${number}: <h2>${displayCode}</h2><br>Open WhatsApp → Linked Devices → Link Device → Enter this code.`
-        );
+        // 📩 Send pairing info to WhatsApp as confirmation
+        await sock.sendMessage(number + '@s.whatsapp.net', {
+          text: `🔐 *OKAZEUS Pairing Request*\n\n*Session:* ${sessionId}\n*Code:* ${displayCode}\n\nGo to WhatsApp → Linked Devices → Link a Device → Enter this code.`,
+        });
+
+        // ⏳ Set a timer to keep session alive
+        setTimeout(() => {
+          console.log('⏳ Pairing window expired. Cleaning up...');
+          process.exit(1); // optional exit to avoid stale sessions
+        }, 2 * 60 * 1000); // 2 minutes
+
+        return res.send(`
+          ✅ Pairing code for ${number}: <h2>${displayCode}</h2>
+          <p>Sent to WhatsApp as well. Session ID: <code>${sessionId}</code></p>
+        `);
       } else {
-        return res.send('❌ Failed to generate code. Possibly invalid or throttled.');
+        return res.send('❌ Failed to generate pairing code.');
       }
     } else {
+      await sock.sendMessage(number + '@s.whatsapp.net', {
+        text: `✅ This number is already paired.\nSession: ${sessionId}`
+      });
       return res.send('✅ Already paired. Session is ready.');
     }
 
