@@ -2,6 +2,8 @@ const express = require('express');
 const { join } = require('path');
 const fs = require('fs');
 const pino = require('pino');
+const crypto = require('crypto'); // ✅ required for Node.js v20+ / Baileys internals
+
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -14,24 +16,29 @@ const PORT = process.env.PORT || 3000;
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
+// 🌐 Home page
 app.get('/', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'));
 });
 
+// 👋 Optional fallback if someone visits /pair manually
+app.get('/pair', (req, res) => {
+  res.send('❌ This page is not accessible directly. Please use the form on the homepage.');
+});
+
+// 🔐 Pairing handler
 app.post('/pair', async (req, res) => {
   const number = req.body.number?.trim();
 
-  // 🔐 Input check
   if (!number || !/^[0-9]{10,15}$/.test(number)) {
     return res.send('❌ Invalid number format. Use without + or spaces.');
   }
 
   const sessionId = `okazeus~${number}`;
   const sessionFolder = join(__dirname, 'sessions', sessionId);
-
   if (!fs.existsSync(sessionFolder)) fs.mkdirSync(sessionFolder, { recursive: true });
 
-  console.log(`📲 Pairing request received for: ${number}`);
+  console.log(`📲 Pairing request for ${number}`);
 
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
@@ -50,7 +57,7 @@ app.post('/pair', async (req, res) => {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // 🔄 Connection handler
+    // 🔄 After successful connection, send creds.json to user
     sock.ev.on('connection.update', async ({ connection }) => {
       if (connection === 'open') {
         const filePath = join(sessionFolder, 'creds.json');
@@ -65,7 +72,7 @@ app.post('/pair', async (req, res) => {
       }
     });
 
-    // 📌 Request pairing
+    // 🚀 Pair if not already registered
     if (!sock.authState.creds.registered) {
       const code = await sock.requestPairingCode(number);
       const displayCode = code?.match(/.{1,4}/g)?.join('-');
@@ -74,12 +81,14 @@ app.post('/pair', async (req, res) => {
     } else {
       return res.send('✅ Already paired. Session is ready.');
     }
+
   } catch (err) {
-    console.error(`❌ Failed to pair ${number}:`, err.message);
+    console.error(`❌ Pairing failed for ${number}:`, err);
     return res.send(`❌ Error: ${err.message}`);
   }
 });
 
-app.listen(PORT, () =>
-  console.log(`✅ Pairing service running at http://localhost:${PORT}`)
-);
+// 🔊 Start server
+app.listen(PORT, () => {
+  console.log(`✅ Pairing service running at http://localhost:${PORT}`);
+});
