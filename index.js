@@ -1,5 +1,5 @@
 global.crypto = require('crypto'); // Fix for Node.js v20+
-
+// Trigger redeploy: Added QR code support
 const express = require('express');
 const { join } = require('path');
 const fs = require('fs');
