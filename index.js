@@ -1,4 +1,5 @@
-global.crypto = require('crypto'); // ✅ this is key
+global.crypto = require('crypto'); // ✅ Fix for Node.js v20+ and Baileys
+
 const express = require('express');
 const { join } = require('path');
 const fs = require('fs');
@@ -15,17 +16,14 @@ const PORT = process.env.PORT || 3000;
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// 🌐 Home page
 app.get('/', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'));
 });
 
-// 👋 Optional fallback if someone visits /pair manually
 app.get('/pair', (req, res) => {
-  res.send('❌ This page is not accessible directly. Please use the form on the homepage.');
+  res.send('❌ Direct access to /pair not allowed. Please use the homepage form.');
 });
 
-// 🔐 Pairing handler
 app.post('/pair', async (req, res) => {
   const number = req.body.number?.trim();
 
@@ -37,15 +35,13 @@ app.post('/pair', async (req, res) => {
   const sessionFolder = join(__dirname, 'sessions', sessionId);
   if (!fs.existsSync(sessionFolder)) fs.mkdirSync(sessionFolder, { recursive: true });
 
-  console.log(`📲 Pairing request for ${number}`);
-
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
       version,
-      logger: pino({ level: 'silent' }),
+      logger: pino({ level: 'debug' }), // ✅ Better logging to detect disconnection reason
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
@@ -56,8 +52,12 @@ app.post('/pair', async (req, res) => {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // 🔄 After successful connection, send creds.json to user
-    sock.ev.on('connection.update', async ({ connection }) => {
+    sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+      console.log('📶 Connection update:', connection);
+      if (connection === 'close') {
+        console.log('⚠️ Connection closed:', lastDisconnect?.error?.message || 'unknown');
+      }
+
       if (connection === 'open') {
         const filePath = join(sessionFolder, 'creds.json');
         if (fs.existsSync(filePath)) {
@@ -71,23 +71,29 @@ app.post('/pair', async (req, res) => {
       }
     });
 
-    // 🚀 Pair if not already registered
     if (!sock.authState.creds.registered) {
+      // optional delay for stability
+      await new Promise(resolve => setTimeout(resolve, 1000));
       const code = await sock.requestPairingCode(number);
       const displayCode = code?.match(/.{1,4}/g)?.join('-');
-      console.log(`✅ Pairing code for ${number}: ${displayCode}`);
-      return res.send(`✅ Pairing code for ${number}: <h2>${displayCode}</h2><br>Open WhatsApp → Linked Devices → Link Device → Enter this code.`);
+
+      if (displayCode) {
+        return res.send(
+          `✅ Pairing code for ${number}: <h2>${displayCode}</h2><br>Open WhatsApp → Linked Devices → Link Device → Enter this code.`
+        );
+      } else {
+        return res.send('❌ Failed to generate code. Possibly invalid or throttled.');
+      }
     } else {
       return res.send('✅ Already paired. Session is ready.');
     }
 
   } catch (err) {
-    console.error(`❌ Pairing failed for ${number}:`, err);
+    console.error('❌ Pairing error:', err);
     return res.send(`❌ Error: ${err.message}`);
   }
 });
 
-// 🔊 Start server
 app.listen(PORT, () => {
   console.log(`✅ Pairing service running at http://localhost:${PORT}`);
 });
