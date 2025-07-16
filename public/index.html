@@ -124,7 +124,24 @@
 </head>
 <body>
   <div class="container">
-    
+    <div id="qr-container" style="text-align:center; margin-top:20px;">
+  <h3>Scan this QR code with WhatsApp to pair</h3>
+  <img id="qr-image" src="" alt="QR Code" style="width:300px; height:300px;" />
+</div>
+
+<script>
+  const evtSource = new EventSource('/qr');
+  evtSource.addEventListener('qr', (event) => {
+    const data = JSON.parse(event.data);
+    document.getElementById('qr-image').src = data.qrImage;
+  });
+
+  evtSource.onerror = () => {
+    console.log('QR event source error or closed');
+    evtSource.close();
+  };
+</script>
+
     <h1>OKAZEUS PAIRING</h1>
     <p class="subtitle">Link your WhatsApp</p>
 
