@@ -1,4 +1,4 @@
-const crypto = require('crypto'); // ✅ required for Node.js v20+ / Baileys internals
+global.crypto = require('crypto'); // ✅ this is key
 const express = require('express');
 const { join } = require('path');
 const fs = require('fs');
