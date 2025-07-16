@@ -4,6 +4,7 @@ const express = require('express');
 const { join } = require('path');
 const fs = require('fs');
 const pino = require('pino');
+const QRCode = require('qrcode');
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -24,7 +25,47 @@ app.get('/pair', (req, res) => {
   res.send('❌ Direct access to /pair not allowed. Please use the homepage form.');
 });
 
-// Utility: timeout wrapper
+// SSE endpoint to push QR codes to the browser
+app.get('/qr', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  // Keep connection alive by sending a comment every 30s
+  const keepAlive = setInterval(() => {
+    res.write(': keep-alive\n\n');
+  }, 30000);
+
+  // Store last QR sent to new clients
+  let lastQR = null;
+
+  // Function to send QR to client
+  function sendQR(qr) {
+    lastQR = qr;
+    QRCode.toDataURL(qr, (err, url) => {
+      if (err) {
+        console.error('❌ QRCode generation failed:', err);
+        return;
+      }
+      res.write(`event: qr\n`);
+      res.write(`data: ${JSON.stringify({ qr, qrImage: url })}\n\n`);
+    });
+  }
+
+  // Expose sendQR so pairing handler can call it
+  app.locals.sendQR = sendQR;
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+  });
+
+  // Send last QR if exists immediately on new connection
+  if (lastQR) sendQR(lastQR);
+});
+
+// Timeout wrapper utility
 function timeout(ms, promise) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Timed Out')), ms);
@@ -58,7 +99,7 @@ app.post('/pair', async (req, res) => {
       console.log('✅ Using WhatsApp version:', version);
     } catch {
       console.warn('⚠️ Failed to fetch latest version, using fallback');
-      version = [2, 2204, 13]; // <-- Update this fallback version periodically
+      version = [2, 2204, 13]; // Update this fallback version periodically
     }
 
     const sock = makeWASocket({
@@ -71,14 +112,12 @@ app.post('/pair', async (req, res) => {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Listen to connection updates
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
       console.log('📶 Connection update:', connection);
 
       if (qr) {
-        // Optional: you can send QR code to client here if you want
-        console.log('🔍 QR code generated for pairing.');
+        if (app.locals.sendQR) app.locals.sendQR(qr);
       }
 
       if (connection === 'close') {
@@ -86,7 +125,6 @@ app.post('/pair', async (req, res) => {
       }
 
       if (connection === 'open') {
-        // When connection opens, send creds.json to user's WhatsApp
         const credsFile = join(sessionFolder, 'creds.json');
         if (fs.existsSync(credsFile)) {
           await sock.sendMessage(number + '@s.whatsapp.net', {
@@ -97,7 +135,7 @@ app.post('/pair', async (req, res) => {
           console.log('✅ Sent creds.json to WhatsApp user:', number);
         }
 
-        // Exit gracefully after short delay
+        // Exit after short delay
         setTimeout(() => {
           console.log('✅ Pairing complete. Exiting process.');
           process.exit(0);
@@ -105,7 +143,6 @@ app.post('/pair', async (req, res) => {
       }
     });
 
-    // Check if already registered (paired)
     if (state.creds.registered) {
       await sock.sendMessage(number + '@s.whatsapp.net', {
         text: `✅ This number is already paired.\nSession: ${sessionId}`
@@ -113,19 +150,29 @@ app.post('/pair', async (req, res) => {
       return res.send('✅ Already paired. Session is ready.');
     }
 
-    // Otherwise wait for QR code to appear within pairing window
-    // We'll keep the process alive here, but respond with info
-
-    // You can customize pairing timeout as needed
+    // Keep pairing session alive for 2 minutes
     setTimeout(() => {
       console.log('⏳ Pairing window expired. Exiting process.');
       process.exit(1);
-    }, 2 * 60 * 1000); // 2 minutes
+    }, 2 * 60 * 1000);
 
     return res.send(`
-      ✅ Started pairing for ${number}. Please scan the QR code on your terminal within 2 minutes.<br>
+      ✅ Started pairing for ${number}. Please scan the QR code below within 2 minutes.<br>
       Session ID: <code>${sessionId}</code><br>
-      Check the terminal logs for the QR code.
+      <div id="qr-container" style="text-align:center; margin-top:20px;">
+        <img src="" id="qr-image" style="width:300px; height:300px;" alt="QR Code" />
+      </div>
+      <script>
+        const evtSource = new EventSource('/qr');
+        evtSource.addEventListener('qr', (event) => {
+          const data = JSON.parse(event.data);
+          document.getElementById('qr-image').src = data.qrImage;
+        });
+        evtSource.onerror = () => {
+          console.log('QR event source error or closed');
+          evtSource.close();
+        };
+      </script>
     `);
 
   } catch (err) {
