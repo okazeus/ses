@@ -1,9 +1,8 @@
+const crypto = require('crypto'); // ✅ required for Node.js v20+ / Baileys internals
 const express = require('express');
 const { join } = require('path');
 const fs = require('fs');
 const pino = require('pino');
-const crypto = require('crypto'); // ✅ required for Node.js v20+ / Baileys internals
-
 const {
   default: makeWASocket,
   useMultiFileAuthState,
