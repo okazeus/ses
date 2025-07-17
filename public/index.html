@@ -1,69 +1,41 @@
 <!-- public/index.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>OKAZEUS Pairing</title>
+  <meta charset="UTF-8">
+  <title>Pair WhatsApp</title>
   <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      padding: 50px;
-    }
-    input {
-      padding: 10px;
-      font-size: 18px;
-      width: 300px;
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 18px;
-      margin-top: 10px;
-      cursor: pointer;
-    }
-    #code {
-      margin-top: 20px;
-      font-size: 24px;
-      font-weight: bold;
-      color: green;
-    }
+    body { font-family: sans-serif; text-align: center; padding: 40px; background: #f5f5f5; }
+    input, button { padding: 10px; margin: 10px; font-size: 16px; }
+    #code { font-size: 24px; margin-top: 20px; color: #4CAF50; }
   </style>
 </head>
 <body>
-  <h1>OKAZEUS WhatsApp Pairing</h1>
-  <input type="text" id="number" placeholder="Enter your WhatsApp number" />
-  <br />
+  <h2>Generate WhatsApp Pairing Code</h2>
+  <input id="phone" type="text" placeholder="Enter phone number (e.g. 92300xxxxxxx)">
   <button onclick="generateCode()">Generate Pairing Code</button>
   <div id="code"></div>
 
   <script>
     async function generateCode() {
-      const number = document.getElementById('number').value;
-      if (!number) return alert('Please enter your phone number');
+      const number = document.getElementById('phone').value.trim();
+      if (!number) return alert('Please enter a number');
 
-      const btn = document.querySelector('button');
-      btn.disabled = true;
-      btn.innerText = 'Generating...';
+      document.getElementById('code').innerText = '⌛ Requesting...';
 
       try {
-        const res = await fetch('/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ number }),
-        });
-
+        const res = await fetch(`/generate?number=${number}`);
         const data = await res.json();
+
         if (data.code) {
-          document.getElementById('code').innerText = `Pairing Code: ${data.code}`;
+          document.getElementById('code').innerText = `🔐 Pairing Code: ${data.code}`;
         } else {
-          alert(data.error || 'Failed to generate code');
+          document.getElementById('code').innerText = '❌ Failed to generate code.';
         }
       } catch (err) {
-        alert('Error generating code');
         console.error(err);
+        document.getElementById('code').innerText = '❌ Internal Server Error';
       }
-
-      btn.disabled = false;
-      btn.innerText = 'Generate Pairing Code';
     }
   </script>
 </body>
