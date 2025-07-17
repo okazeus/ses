@@ -120,28 +120,20 @@
       font-size: 12px;
       color: rgba(0, 0, 0, 0.5);
     }
+
+    #qr-image {
+      width: 280px;
+      height: 280px;
+      margin: 10px auto;
+      display: none;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <div id="qr-container" style="text-align:center; margin-top:20px;">
-  <h3>Scan this QR code with WhatsApp to pair</h3>
-  <img id="qr-image" src="" alt="QR Code" style="width:300px; height:300px;" />
-</div>
-
-<script>
-  const evtSource = new EventSource('/qr');
-  evtSource.addEventListener('qr', (event) => {
-    const data = JSON.parse(event.data);
-    document.getElementById('qr-image').src = data.qrImage;
-  });
-
-  evtSource.onerror = () => {
-    console.log('QR event source error or closed');
-    evtSource.close();
-  };
-</script>
-
+    <div class="logo"><i class="fab fa-whatsapp"></i></div>
     <h1>OKAZEUS PAIRING</h1>
     <p class="subtitle">Link your WhatsApp</p>
 
@@ -151,9 +143,30 @@
       <button type="submit" class="submit-btn"><i class="fas fa-key"></i> Generate Pairing Code</button>
     </form>
 
+    <div id="qr-container">
+      <h3 style="margin: 20px 0 10px;">Scan QR to link:</h3>
+      <img id="qr-image" alt="QR Code will appear here" />
+    </div>
+
     <div class="footer">
       <p>© 2025 OKAZEUS</p>
     </div>
   </div>
+
+  <script>
+    const qrImage = document.getElementById('qr-image');
+    const evtSource = new EventSource('/qr');
+
+    evtSource.addEventListener('qr', (event) => {
+      const data = JSON.parse(event.data);
+      qrImage.src = data.qrImage;
+      qrImage.style.display = 'block';
+    });
+
+    evtSource.onerror = () => {
+      console.warn('⚠️ QR stream closed or failed');
+      evtSource.close();
+    };
+  </script>
 </body>
 </html>
